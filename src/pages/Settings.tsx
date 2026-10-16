@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Database, HardDrive, Trash2, RefreshCw, CheckCircle2, XCircle,
   Cloud, CloudOff, Loader2, Link2, Link2Off, Lock, FolderOpen, RotateCcw,
+  Save,
 } from "lucide-react";
 import PageHeader from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -16,7 +17,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { formatDateTime, formatFileSize } from "@/lib/utils";
 import { api } from "@/lib/api";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
-import type { BackupEntry, GDriveConfig } from "@/types/electron";
+import type { BackupEntry, GDriveConfig, AutoBackupConfig } from "@/types/electron";
 
 async function verifyAdminPassword(password: string): Promise<boolean> {
   try {
@@ -51,6 +52,11 @@ export default function Settings() {
   const [backupDirectory, setBackupDirectory] = useState("");
   const [recoveryDialog, setRecoveryDialog] = useState<{ open: boolean; phrase: string }>({ open: false, phrase: "" });
   const [deleteBackup, setDeleteBackup] = useState<string | null>(null);
+  const [autoBackupForm, setAutoBackupForm] = useState<AutoBackupConfig>({
+    enabled: false,
+    hour: 2,
+    directory: "",
+  });
 
   const { data: backups = [], isLoading: backupsLoading } = useQuery({
     queryKey: ["settings", "backups"],
@@ -74,6 +80,26 @@ export default function Settings() {
   useEffect(() => {
     if (gdriveConfig) setGdriveForm(gdriveConfig);
   }, [gdriveConfig]);
+
+  const { data: autoBackupConfig } = useQuery({
+    queryKey: ["settings", "auto-backup"],
+    queryFn: api.settings.autoBackupGet,
+  });
+
+  useEffect(() => {
+    if (autoBackupConfig) setAutoBackupForm(autoBackupConfig);
+  }, [autoBackupConfig]);
+
+  const saveAutoBackupMutation = useMutation({
+    mutationFn: (cfg: AutoBackupConfig) => api.settings.autoBackupSave(cfg),
+    onSuccess: () => {
+      toast.success("Auto backup settings saved");
+      queryClient.invalidateQueries({ queryKey: ["settings", "auto-backup"] });
+    },
+    onError: (err: Error) => {
+      toast.error(err.message);
+    },
+  });
 
   const backupMutation = useMutation({
     mutationFn: api.settings.backupCreate,
@@ -221,7 +247,7 @@ export default function Settings() {
 
   return (
     <div>
-      <PageHeader title="Settings" description="Manage database backups and Google Drive integration" />
+      <PageHeader title="Settings" description="Manage database backups, auto backup schedule, and Google Drive integration" />
 
       <Tabs defaultValue="backup">
         <TabsList className="mb-6">
@@ -244,13 +270,13 @@ export default function Settings() {
                   Create Backup
                 </CardTitle>
                 <CardDescription>
-                  Create a backup of the entire database. Files are saved to the backups directory. Admin password required.
+                  Create a backup of the entire database. Files are saved to the backups directory.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center gap-3">
                   <Button
-                    onClick={() => { setAdminPassword(""); setPasswordError(""); setPasswordDialog({ open: true, action: "create" }); }}
+                    onClick={() => backupMutation.mutate()}
                     disabled={backupMutation.isPending}
                     className="gap-2"
                   >
@@ -279,24 +305,80 @@ export default function Settings() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <FolderOpen className="h-5 w-5 text-accent" />
-                  Backup Location
+                  Backup Folder
                 </CardTitle>
                 <CardDescription>
-                  Choose where backup files are saved.
+                  Configure backup directory, automatic scheduling, and backup time.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="flex items-center gap-3">
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="backup-folder-path">Backup Folder</Label>
                   <Input
-                    value={backupDirectory || "Loading..."}
-                    readOnly
-                    className="flex-1 font-mono text-sm"
+                    id="backup-folder-path"
+                    value={autoBackupForm.directory || backupDirectory || ""}
+                    onChange={(e) => setAutoBackupForm({ ...autoBackupForm, directory: e.target.value })}
+                    placeholder="Enter backup directory path"
+                    className="font-mono text-sm focus:border-accent focus:ring-accent/20"
                   />
-                  <Button variant="outline" disabled className="gap-2 shrink-0">
-                    <FolderOpen className="h-4 w-4" />
-                    Change
-                  </Button>
                 </div>
+
+                <Separator />
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">Automatic Daily Backup</p>
+                    <p className="text-xs text-text-secondary">
+                      Enable to automatically create backups every day at the specified hour
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setAutoBackupForm({ ...autoBackupForm, enabled: !autoBackupForm.enabled })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${autoBackupForm.enabled ? "bg-accent" : "bg-border"}`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${autoBackupForm.enabled ? "translate-x-6" : "translate-x-1"}`} />
+                  </button>
+                </div>
+
+                {autoBackupForm.enabled && (
+                  <div className="space-y-2">
+                    <Label htmlFor="backup-hour">Backup Hour (24h)</Label>
+                    <Input
+                      id="backup-hour"
+                      type="number"
+                      min={0}
+                      max={23}
+                      value={autoBackupForm.hour}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val) && val >= 0 && val <= 23) {
+                          setAutoBackupForm({ ...autoBackupForm, hour: val });
+                        }
+                      }}
+                      className="w-24 focus:border-accent focus:ring-accent/20"
+                    />
+                    <p className="text-xs text-text-secondary">
+                      Backup will run at {String(autoBackupForm.hour).padStart(2, "0")}:00 ({autoBackupForm.hour < 12 ? "AM" : "PM"})
+                    </p>
+                  </div>
+                )}
+
+                <Button
+                  onClick={() => {
+                    const cfg = { ...autoBackupForm };
+                    if (!cfg.directory && backupDirectory) cfg.directory = backupDirectory;
+                    saveAutoBackupMutation.mutate(cfg);
+                  }}
+                  disabled={saveAutoBackupMutation.isPending}
+                  className="gap-2"
+                >
+                  {saveAutoBackupMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  {saveAutoBackupMutation.isPending ? "Saving..." : "Save Settings"}
+                </Button>
               </CardContent>
             </Card>
 

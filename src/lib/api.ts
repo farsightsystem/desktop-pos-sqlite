@@ -5,7 +5,7 @@ import type {
   Category, CategoryInput, DashboardStats, BarcodeEntry,
   ZakatSettings, ZakatSettingsInput, ZakatPreview, ZakatCalculation, ZakatInput,
 } from "@/types";
-import type { BackupResult, BackupEntry, GDriveConfig } from "@/types/electron";
+import type { BackupResult, BackupEntry, GDriveConfig, AutoBackupConfig } from "@/types/electron";
 
 async function call<T>(method: string, ...args: unknown[]): Promise<T> {
   if (!window.dbInvoke) {
@@ -120,6 +120,10 @@ const api = {
       window.electronAPI.settings.backupRestore(name),
     getBackupDirectory: (): Promise<{ path: string }> =>
       window.electronAPI.settings.getBackupDirectory(),
+    autoBackupGet: (): Promise<AutoBackupConfig> =>
+      window.electronAPI.settings.autoBackupGet(),
+    autoBackupSave: (cfg: AutoBackupConfig): Promise<{ success: boolean }> =>
+      window.electronAPI.settings.autoBackupSave(cfg),
     gdriveGetConfig: (): Promise<GDriveConfig> =>
       window.electronAPI.settings.gdriveGetConfig(),
     gdriveSaveConfig: (cfg: GDriveConfig): Promise<{ success: boolean }> =>

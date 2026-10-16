@@ -13,6 +13,8 @@ import {
   generateReturnReceiptHTML,
 } from "./printer.js";
 
+let autoBackupTimer = null;
+
 function getLocalIp() {
   const ifaces = os.networkInterfaces();
 
@@ -251,6 +253,67 @@ function registerHandlers() {
     saveConfig(cfg);
     return { success: true };
   });
+
+  // Auto Backup Settings
+  ipcMain.handle("settings:auto-backup-get", () => {
+    const cfg = loadConfig();
+    return cfg.autoBackup || { enabled: false, hour: 2, directory: getBackupsDir() };
+  });
+
+  ipcMain.handle("settings:auto-backup-save", (_, autoBackupCfg) => {
+    const cfg = loadConfig();
+    cfg.autoBackup = autoBackupCfg;
+    saveConfig(cfg);
+    startAutoBackupScheduler();
+    return { success: true };
+  });
 }
 
-export { registerHandlers };
+function createBackup() {
+  try {
+    const dir = getBackupsDir();
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const dbPath = getDbPath();
+    if (!fs.existsSync(dbPath)) throw new Error("Database file not found");
+    getDb().pragma("wal_checkpoint(TRUNCATE)");
+    const timestamp = new Date()
+      .toISOString()
+      .replace(/[:.]/g, "-")
+      .slice(0, 19);
+    const backupName = `riyaz-enterprise-backup-${timestamp}.db`;
+    const backupPath = path.join(dir, backupName);
+    fs.copyFileSync(dbPath, backupPath);
+    return { success: true, name: backupName };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function startAutoBackupScheduler() {
+  if (autoBackupTimer) {
+    clearInterval(autoBackupTimer);
+    autoBackupTimer = null;
+  }
+
+  const cfg = loadConfig();
+  const autoBackup = cfg.autoBackup;
+  if (!autoBackup || !autoBackup.enabled) return;
+
+  const hour = typeof autoBackup.hour === "number" ? autoBackup.hour : 2;
+
+  autoBackupTimer = setInterval(() => {
+    const now = new Date();
+    if (now.getHours() === hour && now.getMinutes() === 0) {
+      const lastRunKey = `autoBackupLastRun_${now.toDateString()}`;
+      if (!autoBackup[lastRunKey]) {
+        createBackup();
+        const updatedCfg = loadConfig();
+        if (!updatedCfg.autoBackup) updatedCfg.autoBackup = {};
+        updatedCfg.autoBackup[lastRunKey] = true;
+        saveConfig(updatedCfg);
+      }
+    }
+  }, 60000);
+}
+
+export { registerHandlers, startAutoBackupScheduler };

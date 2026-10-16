@@ -1,7 +1,7 @@
 import { app, BrowserWindow } from "electron";
 import path from "path";
 import { fileURLToPath } from "url";
-import { registerHandlers } from "./ipc-handlers.js";
+import { registerHandlers, startAutoBackupScheduler } from "./ipc-handlers.js";
 import { registerDbHandlers } from "./db-ipc.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -40,6 +40,7 @@ function createWindow() {
 app.whenReady().then(() => {
   registerDbHandlers();
   registerHandlers();
+  startAutoBackupScheduler();
   createWindow();
 
   app.on("activate", () => {

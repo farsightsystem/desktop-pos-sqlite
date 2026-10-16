@@ -13,6 +13,8 @@ export interface ElectronAPI {
     backupRestore(name: string): Promise<{ success: boolean; error?: string }>;
     backupDirectoryPick(): Promise<{ canceled: boolean; path?: string }>;
     getBackupDirectory(): Promise<{ path: string }>;
+    autoBackupGet(): Promise<AutoBackupConfig>;
+    autoBackupSave(cfg: AutoBackupConfig): Promise<{ success: boolean }>;
     gdriveGetConfig(): Promise<GDriveConfig>;
     gdriveSaveConfig(cfg: GDriveConfig): Promise<{ success: boolean }>;
   };
@@ -48,6 +50,12 @@ export interface GDriveConfig {
   refreshToken: string;
   autoUpload: boolean;
   connected: boolean;
+}
+
+export interface AutoBackupConfig {
+  enabled: boolean;
+  hour: number;
+  directory: string;
 }
 
 declare global {
